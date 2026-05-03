@@ -1,4 +1,4 @@
-// background.js for Manifest V3 - Updated with more modern regexes
+// background.js - Phase 2 & 3: Advanced Detection & Context capture
 
 const specifics = {
     "Slack Token": "(xox[pboa]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32})",
@@ -48,26 +48,48 @@ const generics = {
 const aws = {
     "AWS Access Key ID": "AKIA[0-9A-Z]{16}",
     "AWS Secret Access Key": "(?i)aws_secret_access_key.{0,20}['|\"]([0-9a-zA-Z\\/\\+]{40})['|\"]",
-    "AWS Session Token": "(?i)aws_session_token.{0,20}['|\"]([0-9a-zA-Z\\/\\+]{300,})['|\"]",
 };
 
 const denyList = ["AIDAAAAAAAAAAAAAAAAA"];
 
+// Shannon Entropy Calculation
+function shannonEntropy(str) {
+    if (!str) return 0;
+    let entropy = 0;
+    const len = str.length;
+    const frequencies = {};
+    for (let i = 0; i < len; i++) {
+        const char = str[i];
+        frequencies[char] = (frequencies[char] || 0) + 1;
+    }
+    for (const char in frequencies) {
+        const p = frequencies[char] / len;
+        entropy -= p * Math.log2(p);
+    }
+    return entropy;
+}
+
 chrome.runtime.onInstalled.addListener(() => {
     chrome.storage.sync.get(['ranOnce'], (result) => {
         if (!result.ranOnce) {
-            chrome.storage.sync.set({ "ranOnce": true });
-            chrome.storage.sync.set({ "originDenyList": ["https://www.google.com"] });
+            chrome.storage.sync.set({ 
+                "ranOnce": true,
+                "originDenyList": ["https://www.google.com"],
+                "globalIgnoreList": []
+            });
         }
     });
 });
 
 const checkData = async (data, src, regexes, fromEncoded = false, parentUrl = undefined, parentOrigin = undefined) => {
     let findings = [];
+    const storage = await chrome.storage.sync.get(["globalIgnoreList", "leakedKeys", "entropy"]);
+    const ignoreList = storage.globalIgnoreList || [];
+    
+    // 1. Regex Scanning
     for (let key in regexes) {
         try {
             let pattern = regexes[key];
-            // Handle (?i) case-insensitive flag if present (basic support)
             let flags = 'g';
             if (pattern.startsWith("(?i)")) {
                 pattern = pattern.substring(4);
@@ -77,40 +99,62 @@ const checkData = async (data, src, regexes, fromEncoded = false, parentUrl = un
             let re = new RegExp(pattern, flags);
             let match;
             while ((match = re.exec(data)) !== null) {
-                let matchStr = match[1] || match[0]; // Prefer capture group 1 if it exists
-                if (denyList.includes(matchStr)) continue;
+                let matchStr = match[1] || match[0];
+                if (denyList.includes(matchStr) || ignoreList.includes(matchStr)) continue;
+
+                // Capture Context
+                const start = Math.max(0, match.index - 50);
+                const end = Math.min(data.length, match.index + match[0].length + 50);
+                const context = data.substring(start, end);
 
                 findings.push({
                     src: src,
                     match: matchStr,
                     key: key,
+                    context: context,
                     encoded: fromEncoded,
                     parentUrl: parentUrl,
-                    parentOrigin: parentOrigin
+                    parentOrigin: parentOrigin,
+                    timestamp: Date.now()
                 });
             }
-        } catch (e) {
-            console.error(`Invalid regex for ${key}: ${regexes[key]}`, e);
+        } catch (e) {}
+    }
+
+    // 2. Entropy Scanning (Phase 2)
+    if (storage.entropy) {
+        // Simple heuristic: look for long strings of alpha-numeric chars
+        const words = data.match(/[a-zA-Z0-9+/=]{20,}/g) || [];
+        for (let word of words) {
+            if (shannonEntropy(word) > 4.5) { // Threshold for high randomness
+                if (denyList.includes(word) || ignoreList.includes(word)) continue;
+                
+                // Avoid matching common things like base64 blobs by checking if it's already in regex findings
+                if (findings.some(f => f.match === word)) continue;
+
+                const index = data.indexOf(word);
+                const context = data.substring(Math.max(0, index - 50), Math.min(data.length, index + word.length + 50));
+
+                findings.push({
+                    src: src,
+                    match: word,
+                    key: "High Entropy String",
+                    context: context,
+                    encoded: fromEncoded,
+                    parentUrl: parentUrl,
+                    parentOrigin: parentOrigin,
+                    timestamp: Date.now()
+                });
+            }
         }
     }
 
     if (findings.length > 0) {
-        const result = await chrome.storage.sync.get(["leakedKeys"]);
-        let keys = result.leakedKeys || {};
-
+        let keys = storage.leakedKeys || {};
         for (let finding of findings) {
-            if (!keys[parentOrigin]) {
-                keys[parentOrigin] = [];
-            }
-
-            let isNew = !keys[parentOrigin].some(k =>
-                k.src === finding.src &&
-                k.match === finding.match &&
-                k.key === finding.key &&
-                k.encoded === finding.encoded &&
-                k.parentUrl === finding.parentUrl
-            );
-
+            if (!keys[parentOrigin]) keys[parentOrigin] = [];
+            
+            let isNew = !keys[parentOrigin].some(k => k.match === finding.match && k.key === finding.key);
             if (isNew) {
                 keys[parentOrigin].push(finding);
                 await chrome.storage.sync.set({ "leakedKeys": keys });
@@ -119,28 +163,24 @@ const checkData = async (data, src, regexes, fromEncoded = false, parentUrl = un
         }
     }
 
+    // 3. Recursive Decoding
     let decodedStrings = getDecodedb64(data);
     for (let encoded of decodedStrings) {
-        // Avoid infinite recursion by checking if decoded is different from input
-        if (encoded[1] !== data) {
-            checkData(encoded[1], src, regexes, encoded[0], parentUrl, parentOrigin);
+        if (encoded[1] !== data && encoded[1].length > 10) {
+            checkData(encoded[1], src + " (decoded)", regexes, encoded[0], parentUrl, parentOrigin);
         }
     }
 };
 
 const updateTabAndAlert = (finding) => {
-    const { key, src, match, encoded } = finding;
+    const { key, match } = finding;
     chrome.storage.sync.get(["alerts"], (result) => {
-        if (result.alerts === undefined || result.alerts) {
-            let message = encoded
-                ? `${key}: ${match} found in ${src} decoded from ${encoded.substring(0, 9)}...`
-                : `${key}: ${match} found in ${src}`;
-
+        if (result.alerts !== false) {
             chrome.notifications.create({
                 type: 'basic',
                 iconUrl: 'icon48.png',
                 title: 'Secret Found!',
-                message: message.substring(0, 128), // Limit message length
+                message: `${key} detected. Check findings in popup.`,
                 priority: 2
             });
         }
@@ -150,60 +190,42 @@ const updateTabAndAlert = (finding) => {
 
 const updateTab = () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs.length === 0) return;
-        const tab = tabs[0];
-        if (!tab.url) return;
-
+        if (tabs.length === 0 || !tabs[0].url) return;
         try {
-            const url = new URL(tab.url);
-            if (url.protocol.startsWith('http')) {
-                const origin = url.origin;
-                chrome.storage.sync.get(["leakedKeys"], (result) => {
-                    const leakedKeys = result.leakedKeys || {};
-                    const originKeysCount = (leakedKeys[origin] && leakedKeys[origin].length > 0)
-                        ? leakedKeys[origin].length.toString()
-                        : "";
-
-                    chrome.action.setBadgeText({ text: originKeysCount });
-                    chrome.action.setBadgeBackgroundColor({ color: '#ff0000' });
-                });
-            } else {
+            const url = new URL(tabs[0].url);
+            if (!url.protocol.startsWith('http')) {
                 chrome.action.setBadgeText({ text: '' });
+                return;
             }
-        } catch (e) {
-            chrome.action.setBadgeText({ text: '' });
-        }
+            const origin = url.origin;
+            chrome.storage.sync.get(["leakedKeys"], (result) => {
+                const leakedKeys = result.leakedKeys || {};
+                const count = (leakedKeys[origin] || []).length;
+                chrome.action.setBadgeText({ text: count > 0 ? count.toString() : "" });
+                chrome.action.setBadgeBackgroundColor({ color: '#E53935' });
+            });
+        } catch (e) {}
     });
 };
 
 chrome.tabs.onActivated.addListener(updateTab);
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete') {
-        updateTab();
-    }
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'complete') updateTab();
 });
 
 const getStringsOfSet = (word, char_set, threshold = 20) => {
-    let count = 0;
-    let letters = "";
-    let strings = [];
+    let count = 0, letters = "", strings = [];
     if (!word) return [];
-
     for (let char of word) {
         if (char_set.indexOf(char) > -1) {
             letters += char;
             count += 1;
         } else {
-            if (count > threshold) {
-                strings.push(letters);
-            }
-            letters = "";
-            count = 0;
+            if (count > threshold) strings.push(letters);
+            letters = ""; count = 0;
         }
     }
-    if (count > threshold) {
-        strings.push(letters);
-    }
+    if (count > threshold) strings.push(letters);
     return strings;
 };
 
@@ -213,34 +235,12 @@ const getDecodedb64 = (inputString) => {
     let decodeds = [];
     for (let encoded of encodeds) {
         try {
-            let decoded = [encoded, atob(encoded)];
-            // Only add if it seems like useful text or potential secret
-            if (decoded[1].length > 5) {
-                decodeds.push(decoded);
-            }
+            let decoded = atob(encoded);
+            if (/[^ -~]/.test(decoded)) continue; // Skip if contains non-printable chars
+            decodeds.push([encoded, decoded]);
         } catch (e) {}
     }
     return decodeds;
-};
-
-const checkIfOriginDenied = (check_url, cb) => {
-    chrome.storage.sync.get(["originDenyList"], (result) => {
-        let originDenyList = result.originDenyList || [];
-        let skip = originDenyList.some(origin => check_url.startsWith(origin));
-        cb(skip);
-    });
-};
-
-const checkForGitDir = (data, url) => {
-    if (data.includes("[core]") || data.includes("[remote")) {
-        chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icon48.png',
-            title: 'Sensitive Directory Found',
-            message: `.git config found at ${url}`,
-            priority: 1
-        });
-    }
 };
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -250,46 +250,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (settings.specifics !== false) regexes = { ...regexes, ...specifics };
         if (settings.aws !== false) regexes = { ...regexes, ...aws };
 
-        const parentUrl = request.parentUrl;
-        const parentOrigin = request.parentOrigin;
-
         if (request.scriptUrl) {
-            checkIfOriginDenied(request.scriptUrl, (skip) => {
-                if (!skip) {
-                    fetch(request.scriptUrl, { "credentials": 'include' })
-                        .then(response => response.text())
-                        .then(data => checkData(data, request.scriptUrl, regexes, undefined, parentUrl, parentOrigin))
-                        .catch(err => console.error("Fetch failed for script:", request.scriptUrl, err));
-                }
-            });
+            fetch(request.scriptUrl, { "credentials": 'include' })
+                .then(r => r.text())
+                .then(data => checkData(data, request.scriptUrl, regexes, undefined, request.parentUrl, request.parentOrigin))
+                .catch(() => {});
         } else if (request.pageBody) {
-            checkIfOriginDenied(request.origin, (skip) => {
-                if (!skip) {
-                    checkData(request.pageBody, request.origin, regexes, undefined, parentUrl, parentOrigin);
-                }
-            });
-        } else if (request.envFile) {
-            if (settings.checkEnv) {
-                fetch(request.envFile, { "credentials": 'include' })
-                    .then(response => response.text())
-                    .then(data => {
-                        if (data.includes("=") || data.includes("APP_") || data.includes("DB_")) {
-                            checkData(data, ".env file", regexes, undefined, parentUrl, parentOrigin);
-                        }
-                    })
-                    .catch(err => {});
-            }
+            checkData(request.pageBody, request.origin, regexes, undefined, request.parentUrl, request.parentOrigin);
+        } else if (request.envFile && settings.checkEnv) {
+            fetch(request.envFile, { "credentials": 'include' })
+                .then(r => r.text())
+                .then(data => {
+                    if (data.includes("=") || data.includes("APP_")) {
+                        checkData(data, ".env file", regexes, undefined, request.parentUrl, request.parentOrigin);
+                    }
+                }).catch(() => {});
         } else if (request.openTabs) {
-            for (let tab of request.openTabs) {
-                chrome.tabs.create({ url: tab });
-            }
-        } else if (request.gitDir) {
-            if (settings.checkGit) {
-                fetch(request.gitDir, { "credentials": 'include' })
-                    .then(response => response.text())
-                    .then(data => checkForGitDir(data, request.gitDir))
-                    .catch(err => {});
-            }
+            request.openTabs.forEach(url => chrome.tabs.create({ url }));
+        } else if (request.gitDir && settings.checkGit) {
+            fetch(request.gitDir, { "credentials": 'include' })
+                .then(r => r.text())
+                .then(data => {
+                    if (data.includes("[core]")) {
+                        chrome.notifications.create({
+                            type: 'basic',
+                            iconUrl: 'icon48.png',
+                            title: 'Git Config Found',
+                            message: `Found at ${request.gitDir}`,
+                            priority: 1
+                        });
+                    }
+                }).catch(() => {});
         }
     });
     return true;

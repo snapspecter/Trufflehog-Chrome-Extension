@@ -1,84 +1,120 @@
-<!-- Copyright 2017 The Chromium Authors. All rights reserved.
-Use of this source code is governed by a BSD-style license that can be
-found in the LICENSE file. -->
+<!DOCTYPE html>
 <html>
-  <head>
-      <title>Trufflehog</title>
-      <link href="popup.css" rel="stylesheet" type="text/css">
-  </head>
-  <body style="width: 300px;">
-      <img src='./icon.png' style="width: 128px; margin: auto; display: block;">
-      <div>
-          <h3>Generic Secrets</h3>
-          <label class="switch">
-              <input type="checkbox" id="generics">
-              <span class="slider"></span>
-          </label>
-      </div>
-      <div>
-          <h3>Specific Secrets</h3>
-          <label class="switch">
-              <input type="checkbox" id="specifics">
-              <span class="slider"></span>
-          </label>
-      </div>
-      <div>
-          <h3>AWS Keys</h3>
-          <label class="switch">
-              <input type="checkbox" id="aws">
-              <span class="slider"></span>
-          </label>
-      </div>
-      <div style="margin-bottom: 10px">
-          <h3>Check for .env files</h3>
-          <h5>(can trigger WAF bans)</h5>
-          <label class="switch">
-              <input type="checkbox" id="checkEnv">
-              <span class="slider"></span>
-          </label>
-      </div>
-      <div style="margin-bottom: 10px">
-          <h3>Check for .git dirs</h3>
-          <h5>(can trigger WAF bans)</h5>
-          <label class="switch">
-              <input type="checkbox" id="checkGit">
-              <span class="slider"></span>
-          </label>
-      </div>
-      <div style="margin-bottom: 10px">
-          <h3>Alerts</h3>
-          <label class="switch">
-              <input type="checkbox" id="alerts">
-              <span class="slider"></span>
-          </label>
-      </div>
-      <div>
-          <button class="accordion"><h3>Origin Deny List</h3></button>
-          <div class="panel">
-              Comma Seperated
-              <textarea style="width:100%" id="denyList"></textarea>
-          </div>
-      </div>
-       <div>
-          <button class="accordion"><h3>Findings</h3></button>
-          <div class="panel">
-              <button style="margin-top: 10px" id="clearOriginFindings">Clear This Origin</button>
-              <button style="margin-top: 10px" id="clearAllFindings">Clear All Origins</button>
-              <button style="margin-top: 10px" id="downloadAllFindings">Download All Findings</button>
-              <h3>Findings for this origin</h3>
-              <ul id="findingList">
+<head>
+    <meta charset="UTF-8">
+    <title>Trufflehog Extension</title>
+    <link href="popup.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+    <header>
+        <img src="icon48.png" alt="Trufflehog">
+        <h1>Trufflehog</h1>
+    </header>
 
-              </ul>
-          </div>
-      </div>
-      <div>
-          <button class="accordion"><h3>Open Lots Of Tabs</h3></button>
-          <div class="panel">
-              Comma Seperated
-              <button style="margin-top: 10px" id="openTabs">Open Tabs</button>
-              <textarea style="width:100%" id="tabList" placeholder="https://google.com,https://yahoo.com"></textarea>
-          </div>
-      </div>
-   <script src="popup.js"></script>
-  </body>
+    <main>
+        <section class="card">
+            <h2>Scanning Toggles</h2>
+            <div class="toggle-group">
+                <div class="toggle-item">
+                    <span>Generic Secrets</span>
+                    <label class="switch">
+                        <input type="checkbox" id="generics">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>Specific Tokens</span>
+                    <label class="switch">
+                        <input type="checkbox" id="specifics">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>AWS Keys</span>
+                    <label class="switch">
+                        <input type="checkbox" id="aws">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>High Entropy (Beta)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="entropy">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Deep Probing</h2>
+            <div class="toggle-group">
+                <div class="toggle-item">
+                    <div class="text-meta">
+                        <span>Check .env files</span>
+                        <small>Can trigger WAF bans</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="checkEnv">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <div class="text-meta">
+                        <span>Check .git dirs</span>
+                        <small>Can trigger WAF bans</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="checkGit">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>Desktop Alerts</span>
+                    <label class="switch">
+                        <input type="checkbox" id="alerts">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <section class="card accordion-section">
+            <button class="accordion">Findings <span id="findingsBadge" class="badge">0</span></button>
+            <div class="panel">
+                <div class="action-bar">
+                    <button id="clearOriginFindings" class="btn secondary small">Clear Origin</button>
+                    <button id="clearAllFindings" class="btn secondary small">Clear All</button>
+                    <button id="downloadAllFindings" class="btn primary small">Export CSV</button>
+                </div>
+                <ul id="findingList" class="finding-list">
+                    <li class="empty-state">No findings for this origin</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="card accordion-section">
+            <button class="accordion">Origin Deny List</button>
+            <div class="panel">
+                <p class="help-text">Comma separated list of origins to skip.</p>
+                <textarea id="denyList" placeholder="https://example.com, https://internal.dev"></textarea>
+            </div>
+        </section>
+
+        <section class="card accordion-section">
+            <button class="accordion">Batch Tab Opener</button>
+            <div class="panel">
+                <p class="help-text">Paste a comma-separated list of URLs.</p>
+                <textarea id="tabList" placeholder="https://google.com, https://github.com"></textarea>
+                <button id="openTabs" class="btn primary full-width">Open Tabs</button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <a href="https://trufflesecurity.com" target="_blank">trufflesecurity.com</a>
+    </footer>
+
+    <script src="popup.js"></script>
+</body>
 </html>
