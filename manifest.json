@@ -1,8 +1,8 @@
 {
   "name": "Trufflehog",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "manifest_version": 3,
-  "description": "Sniffing out credentials",
+  "description": "Professional-grade credential sniffing and secret detection.",
   "homepage_url": "https://trufflesecurity.com",
   "background": {
     "service_worker": "background.js"
@@ -15,7 +15,9 @@
     "storage",
     "tabs",
     "scripting",
-    "notifications"
+    "notifications",
+    "webRequest",
+    "cookies"
   ],
   "host_permissions": [
     "https://*/*",
@@ -34,7 +36,8 @@
       ],
       "js": [
         "inject.js"
-      ]
+      ],
+      "run_at": "document_idle"
     }
   ]
 }

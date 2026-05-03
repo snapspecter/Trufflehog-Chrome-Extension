@@ -8,7 +8,7 @@
 <body>
     <header>
         <img src="icon48.png" alt="Trufflehog">
-        <h1>Trufflehog</h1>
+        <h1>Trufflehog Pro</h1>
     </header>
 
     <main>
@@ -30,14 +30,7 @@
                     </label>
                 </div>
                 <div class="toggle-item">
-                    <span>AWS Keys</span>
-                    <label class="switch">
-                        <input type="checkbox" id="aws">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div class="toggle-item">
-                    <span>High Entropy (Beta)</span>
+                    <span>High Entropy Strings</span>
                     <label class="switch">
                         <input type="checkbox" id="entropy">
                         <span class="slider round"></span>
@@ -47,25 +40,12 @@
         </section>
 
         <section class="card">
-            <h2>Deep Probing</h2>
+            <h2>Probing & Alerts</h2>
             <div class="toggle-group">
                 <div class="toggle-item">
-                    <div class="text-meta">
-                        <span>Check .env files</span>
-                        <small>Can trigger WAF bans</small>
-                    </div>
+                    <span>Check .env / .git</span>
                     <label class="switch">
                         <input type="checkbox" id="checkEnv">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div class="toggle-item">
-                    <div class="text-meta">
-                        <span>Check .git dirs</span>
-                        <small>Can trigger WAF bans</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="checkGit">
                         <span class="slider round"></span>
                     </label>
                 </div>
@@ -94,18 +74,25 @@
         </section>
 
         <section class="card accordion-section">
+            <button class="accordion">Reporting Webhook</button>
+            <div class="panel">
+                <p class="help-text">Send findings to a Slack or custom URL.</p>
+                <input type="text" id="webhookUrl" placeholder="https://hooks.slack.com/services/..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">
+                <button id="saveWebhook" class="btn primary full-width" style="margin-top:8px;">Save Webhook</button>
+            </div>
+        </section>
+
+        <section class="card accordion-section">
             <button class="accordion">Origin Deny List</button>
             <div class="panel">
-                <p class="help-text">Comma separated list of origins to skip.</p>
-                <textarea id="denyList" placeholder="https://example.com, https://internal.dev"></textarea>
+                <textarea id="denyList" placeholder="https://google.com, https://internal.dev"></textarea>
             </div>
         </section>
 
         <section class="card accordion-section">
             <button class="accordion">Batch Tab Opener</button>
             <div class="panel">
-                <p class="help-text">Paste a comma-separated list of URLs.</p>
-                <textarea id="tabList" placeholder="https://google.com, https://github.com"></textarea>
+                <textarea id="tabList" placeholder="https://target1.com, https://target2.com"></textarea>
                 <button id="openTabs" class="btn primary full-width">Open Tabs</button>
             </div>
         </section>
