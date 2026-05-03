@@ -1,56 +1,55 @@
-## Talk explaining this extension
+# Updated Trufflehog Chrome Extension
 
-https://www.youtube.com/watch?v=i9b5Yij_HV4
+A professional-grade credential sniffing and secret detection tool for your browser. This extension monitors web pages, network traffic, and storage for leaked API keys, tokens, and sensitive credentials in real-time.
 
-## Questions? Feedback? Join our slack
+## Key Features
 
-https://join.slack.com/t/trufflehog-community/shared_invite/zt-nzznzf8w-y1Lg4PnnLupzlYuwq_AUHA
+- **Manifest V3 Compliant:** Built on the latest Chrome extension architecture for security and performance.
+- **Multi-Layer Scanning:**
+    - **DOM & Shadow DOM:** Recursively scans the visible page and hidden web components.
+    - **Network Analysis:** Monitors XHR/Fetch request headers for tokens (e.g., Bearer, Basic Auth).
+    - **Browser Storage:** Scans `localStorage`, `sessionStorage`, and `cookies`.
+    - **Source Maps:** Automatically detects and scans unminified source maps for hardcoded secrets.
+- **Advanced Detection Engine:**
+    - **Regex Matching:** 30+ modern patterns for GitHub, AWS, Slack, Stripe, and more.
+    - **Entropy Scanning:** Identifies high-randomness strings that may be undiscovered secrets.
+    - **Recursive Decoding:** Automatically decodes Base64 strings to find nested secrets.
+- **Enterprise Reporting:**
+    - **Centralized Webhooks:** Send findings to a Slack webhook or a custom security endpoint.
+    - **CSV Export:** Download all findings across all origins for offline analysis.
+    - **Desktop Notifications:** Real-time alerts when a secret is detected.
+- **Developer Friendly:**
+    - **Context Snippets:** View 100 characters of surrounding code for every finding.
+    - **Ignore List:** Globally ignore known false positives.
+    - **Origin Deny List:** Skip scanning on specific trusted or sensitive domains.
 
-## Install instructions
+## Installation (Developer Mode)
 
-The extension is available for install here https://chrome.google.com/webstore/detail/trufflehog/bafhdnhjnlcdbjcdcnafhdcphhnfnhjc
+1. Clone this repository.
+2. Open Chrome and navigate to `chrome://extensions/`.
+3. Enable **Developer mode** in the top right.
+4. Click **Load unpacked** and select the extension directory.
 
-Here's what to do if you find these keys:
+## Usage
 
-## AWS keys
-AWS has a rich API and sadely you may have to test a bunch of commands. List buckets might be a good start https://docs.aws.amazon.com/cli/latest/reference/s3api/list-buckets.html
+1. Click the **Trufflehog** icon in your toolbar to open the control panel.
+2. Toggle the desired scanning modules (Entropy scanning is recommended for deep bug bounty hunting).
+3. Browse the web as usual.
+4. When the badge icon shows a number, click it to review findings for the current site.
+5. (Optional) Configure a **Reporting Webhook** in the settings to centralize your discoveries.
 
-## Slack webhook keys
-These are a problem almost always, see https://cybersecurity.att.com/blogs/labs-research/slack-phishing-attacks-using-webhooks
+---
 
-## Algelia
-These keys have access controls, a typical public key should not have access to the usage API, otherwise it could be an issue:
-```
-curl -X GET \
-  -H "X-Algolia-API-Key: ${API_KEY}" \
-  -H "X-Algolia-Application-Id: ${APPLICATION_ID}" \
-  --compressed \
-  "https://usage.algolia.com/1/usage/records?startDate=2020-07-15T00:00:00Z&endDate=2020-07-16T00:00:00Z&granularity=daily"
-{"status":401,"message":"The provided API key is missing the \"usage\" ACL"}%
-```
+##  Verification & Testing
 
-## Amplitude
-You should not be able to export all data out of amplitude with a typical public key
-```
-curl -u API_Key:${KEY} 'https://amplitude.com/api/2/export?start=20150201T5&end=20150203T20'
-<html><title>403: Forbidden</title><body>403: Forbidden</body></html>%
-```
+### GitHub Tokens
+Test the validity of a GitHub token with:
+`curl -H "Authorization: token <TOKEN>" https://api.github.com/user`
 
-## Bugsnag API
-You should not be able to pull the orginization name
-```
-curl --get 'https://api.bugsnag.com/user/organizations' \
-       --header 'Authorization: token ${TOKEN}' \
-       --header 'X-Version: 2'
-{"errors":["Bad Credentials"]}%
-```
+### JWT (JSON Web Tokens)
+Decode them at [jwt.io](https://jwt.io/) to check for sensitive claims. If the algorithm is `HS256`, you can attempt to crack the secret using Hashcat (mode `16500`).
 
-## Google maps
-This is untested, I found this repo for google map keys https://github.com/ozguralp/gmapsapiscanner
+---
 
-These keys also follow the same format for many other API's such as gmail/drive/cloud/etc... so this tool likely doesn't give full coverage
+#### Forked from trufflesecurity/Trufflehog-Chrome-Extension
 
-## Json web tokens
-JWT's are interesting not just because they go to API's, but also because you can crack their secret in hashcat if they're alg `hs`
-you can decode them here to figure out their algorithm https://jwt.io/
-and you can crack them here https://hashcat.net/wiki/doku.php?id=example_hashes with flag `-m 16500`
